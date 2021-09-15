@@ -1,3 +1,4 @@
+from clinica.engine.provenance_utils import is_activity_tracked, is_agent_tracked
 from clinica.utils.stream import cprint
 
 import json
@@ -5,19 +6,6 @@ import os
 import functools
 
 from pathlib import Path
-
-
-def init_prov(func):
-    @functools.wraps(func)
-    def init_wrapper(self, **kwargs):
-        cprint("Intializing the provenance context", lvl="warning")
-        # call the constructor for the pipeline and check return code
-        ret = func(self, **kwargs)
-        # Postprocessing: discover the provenance files and add them to the active context
-        cprint("Postprocessing for provenance", lvl="warning")
-        return ret
-
-    return init_wrapper
 
 
 def provenance(func):
@@ -112,16 +100,17 @@ def append_prov_dict(prov_data, local_data):
 
 def update_agents(prov_data):
     import clinica
+    from .provenance_utils import get_agent_id
 
     agent_version = clinica.__version__
     agent_label = clinica.__name__
-    agent_id = "clin:" + agent_version
+    agent_id = get_agent_id(agent_label + agent_version)
 
-    new_agent = {"@id": agent_id, "label": agent_label, "version": agent_version}
+    new_agent = {}
+    if not is_agent_tracked(agent_id):
+        new_agent = {"@id": agent_id, "label": agent_label, "version": agent_version}
 
-    if new_agent not in prov_data["records"]["Agent"]:
-        prov_data["records"]["Agent"].append(new_agent)
-    return prov_data, agent_id
+    return agent_id, new_agent
 
 
 def update_activities(self, agent_id, prov_data):
@@ -129,24 +118,24 @@ def update_activities(self, agent_id, prov_data):
     Add the current command to the list of activities
     """
     import sys
+    from .provenance_utils import get_activity_id
 
-    activity_parameters = (self.parameters,)
-    activity_label = (self.fullname,)
-    activity_id = ("clin:" + self.fullname,)
+    activity_parameters = self.parameters
+    activity_label = self.fullname
+    activity_id = get_activity_id(self.fullname)
     activity_command = (sys.argv[1:],)
-    activity_agent = (agent_id,)
+    activity_agent = agent_id
     activity_used_file = ""
-    new_activity = {
-        "@id": activity_id,
-        "label": activity_label,
-        "command": activity_command,
-        "parameters": activity_parameters,
-        "wasAssociatedWith": activity_agent,
-        "used": activity_used_file,
-    }
 
-    if new_activity not in prov_data["records"]["Activity"]:
-        prov_data["records"]["Activity"].append(new_activity)
+    if not is_activity_tracked(activity_id):
+        new_activity = {
+            "@id": activity_id,
+            "label": activity_label,
+            "command": activity_command,
+            "parameters": activity_parameters,
+            "wasAssociatedWith": activity_agent,
+            "used": activity_used_file,
+        }
 
     return prov_data, activity_id
 
@@ -155,20 +144,28 @@ def update_entities(self, prov_data):
     """
     Add the current file to the list of entities
     """
-    entity_id = ""
-    entity_label = ""
-    entity_path = ""
-    entity_activity = ""
 
-    new_entity = {
-        "@id": "entity_id",
-        "label": "entity_label",
-        "atLocation": "entity_path",
-        "wasGeneratedBy": "entity_activity",
-    }
+    from pathlib import Path
+    from clinica.utils.filemanip import extract_image_ids
+    from .provenance_utils import get_files_list, get_entity_id
 
-    if new_entity not in prov_data["records"]["Entity"]:
-        prov_data["records"]["Entity"].append(new_entity)
+    image_paths = get_files_list(self)
+    if image_paths:
+        for image_path in enumerate(image_paths):
+            entity_id = get_entity_id(image_path)
+            entity_label = Path(image_files[i]).name
+            entity_path = image_paths[i]
+            entity_activity = ""
+
+        new_entity = {
+            "@id": entity_id,
+            "label": entity_label,
+            "atLocation": entity_path,
+            "wasGeneratedBy": "entity_activity",
+        }
+
+        if new_entity not in prov_data["records"]["Entity"]:
+            prov_data["records"]["Entity"].append(new_entity)
 
     return prov_data
 
