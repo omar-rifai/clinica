@@ -48,7 +48,7 @@ def is_activity_tracked(prov_context, activity_id):
 def get_entity_id(file_path):
     from pathlib import Path
 
-    entity_id = Path(file_path).name.with_suffix("")
+    entity_id = Path(file_path).with_suffix("").name
     return entity_id
 
 

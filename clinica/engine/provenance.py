@@ -14,10 +14,9 @@ def provenance(func):
         bids_dir = self._bids_directory
 
         prov_context = get_context(bids_dir)
-        prov_data = get_current(self)
-        validate_command(prov_context, prov_data)
+        prov_command = get_command(self, prov_context)
+        validate_command(prov_context, prov_command)
 
-        print(prov_data)
         # Run the pipeline
         ret = func(self)
 
@@ -40,18 +39,18 @@ def read_prov(file_path):
     return False
 
 
-def get_current(self):
+def get_command(self, prov_context):
     """
-    Read the current user command and save information in a dict
+    Read the user command and save information in a dict
     """
     import sys
 
-    prov_current = {"records": {"Entity": [], "Agent": [], "Activity": []}}
-    prov_current, agent_id = update_agents(prov_current)
-    prov_current, activity_id = update_activities(self, agent_id, prov_current)
-    prov_current = update_entities(self, prov_current)
+    new_agent = get_agent()
+    # TODO see if the entities already exist in the context, otherwise create them
+    new_entity = get_entity(self)
+    new_activity = get_activity(self, new_agent["@id"], new_entity["@id"])
 
-    return prov_current
+    return {"Agent": new_agent, "Activity": new_activity, "Entity": new_entity}
 
 
 def get_context(bids_dir):
@@ -98,7 +97,7 @@ def append_prov_dict(prov_data, local_data):
     return prov_data
 
 
-def update_agents(prov_data):
+def get_agent():
     import clinica
     from .provenance_utils import get_agent_id
 
@@ -106,14 +105,12 @@ def update_agents(prov_data):
     agent_label = clinica.__name__
     agent_id = get_agent_id(agent_label + agent_version)
 
-    new_agent = {}
-    if not is_agent_tracked(agent_id):
-        new_agent = {"@id": agent_id, "label": agent_label, "version": agent_version}
+    new_agent = {"@id": agent_id, "label": agent_label, "version": agent_version}
 
-    return agent_id, new_agent
+    return new_agent
 
 
-def update_activities(self, agent_id, prov_data):
+def get_activity(self, agent_id, entity_id):
     """
     Add the current command to the list of activities
     """
@@ -125,22 +122,21 @@ def update_activities(self, agent_id, prov_data):
     activity_id = get_activity_id(self.fullname)
     activity_command = (sys.argv[1:],)
     activity_agent = agent_id
-    activity_used_file = ""
+    activity_used_file = entity_id
 
-    if not is_activity_tracked(activity_id):
-        new_activity = {
-            "@id": activity_id,
-            "label": activity_label,
-            "command": activity_command,
-            "parameters": activity_parameters,
-            "wasAssociatedWith": activity_agent,
-            "used": activity_used_file,
-        }
+    new_activity = {
+        "@id": activity_id,
+        "label": activity_label,
+        "command": activity_command,
+        "parameters": activity_parameters,
+        "wasAssociatedWith": activity_agent,
+        "used": entity_id,
+    }
 
-    return prov_data, activity_id
+    return new_activity
 
 
-def update_entities(self, prov_data):
+def get_entity(self):
     """
     Add the current file to the list of entities
     """
@@ -149,25 +145,21 @@ def update_entities(self, prov_data):
     from clinica.utils.filemanip import extract_image_ids
     from .provenance_utils import get_files_list, get_entity_id
 
-    image_paths = get_files_list(self)
-    if image_paths:
-        for image_path in enumerate(image_paths):
-            entity_id = get_entity_id(image_path)
-            entity_label = Path(image_files[i]).name
-            entity_path = image_paths[i]
-            entity_activity = ""
+    images_paths = get_files_list(self)
+    if images_paths:
+        for img_path in images_paths:
+            entity_id = get_entity_id(img_path)
+            entity_label = Path(img_path).name
+            entity_path = img_path
 
         new_entity = {
             "@id": entity_id,
             "label": entity_label,
             "atLocation": entity_path,
-            "wasGeneratedBy": "entity_activity",
+            "wasGeneratedBy": "",
         }
 
-        if new_entity not in prov_data["records"]["Entity"]:
-            prov_data["records"]["Entity"].append(new_entity)
-
-    return prov_data
+    return new_entity
 
 
 def update_prov_file(self, command, file_path):
