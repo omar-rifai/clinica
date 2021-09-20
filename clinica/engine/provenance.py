@@ -1,30 +1,45 @@
-from clinica.engine.provenance_utils import is_activity_tracked, is_agent_tracked
-from clinica.utils.stream import cprint
-
 import json
-import os
 import functools
+from os import read
 
 from pathlib import Path
 
 
 def provenance(func):
+    from .provenance_utils import get_files_list
+
     @functools.wraps(func)
     def run_wrapper(self, **kwargs):
-        bids_dir = self._bids_directory
 
-        prov_context = get_context(bids_dir)
-        prov_command = get_command(self, prov_context)
-        validate_command(prov_context, prov_command)
+        pipeline_fullname = self.fullname
+        in_files_paths, out_files_paths = get_files_list(self, pipeline_fullname)
+
+        prov_input = get_prov(files_paths=in_files_paths)
+        prov_output = get_prov(files_paths=out_files_paths)
+
+        validate_command(prov_input, prov_output)
 
         # Run the pipeline
         ret = func(self)
 
-        # Postprocessing provenance
-        # register_prov(command, file_path)
+        # TODO: register_prov(command, file_path)
+
         return ret
 
     return run_wrapper
+
+
+def get_prov(files_paths):
+    """
+    Return a dictionary with the provenance info related to the files in the files_paths
+    """
+    prov_data = {"records": {"Entity": [], "Agent": [], "Activity": []}}
+    for path in files_paths:
+        prov_record = read_prov(path)
+        if prov_record:
+            prov_data = append_prov_dict(prov_data, prov_record)
+
+    return prov_data
 
 
 def read_prov(file_path):
@@ -53,22 +68,22 @@ def get_command(self, prov_context):
     return {"Agent": new_agent, "Activity": new_activity, "Entity": new_entity}
 
 
-def get_context(bids_dir):
-    """
-    Get the prov files in a given path and add to active dict
-    """
+# def get_context(bids_dir):
+#     """
+#     Get the prov files in a given path and add to active dict
+#     """
 
-    import os
+#     import os
 
-    prov_context = {"records": {"Entity": [], "Agent": [], "Activity": []}}
-    for root, _, files in os.walk(bids_dir, topdown=False):
-        for file in files:
-            file_path = os.path.join(root, file)
-            prov_tmp = read_prov(file_path)
-            if prov_tmp:
-                prov_context = append_prov_dict(prov_context, prov_tmp)
+#     prov_context = {"records": {"Entity": [], "Agent": [], "Activity": []}}
+#     for root, _, files in os.walk(bids_dir, topdown=False):
+#         for file in files:
+#             file_path = os.path.join(root, file)
+#             prov_tmp = read_prov(file_path)
+#             if prov_tmp:
+#                 prov_context = append_prov_dict(prov_context, prov_tmp)
 
-    return prov_context
+#     return prov_context
 
 
 def validateJSON(jsonData):
@@ -136,28 +151,24 @@ def get_activity(self, agent_id, entity_id):
     return new_activity
 
 
-def get_entity(self):
+def get_entity(self, img_path):
     """
     Add the current file to the list of entities
     """
-
+    from clinica.engine.provenance_utils import get_entity_id
     from pathlib import Path
     from clinica.utils.filemanip import extract_image_ids
-    from .provenance_utils import get_files_list, get_entity_id
 
-    images_paths = get_files_list(self)
-    if images_paths:
-        for img_path in images_paths:
-            entity_id = get_entity_id(img_path)
-            entity_label = Path(img_path).name
-            entity_path = img_path
+    entity_id = get_entity_id(img_path)
+    entity_label = Path(img_path).name
+    entity_path = img_path
 
-        new_entity = {
-            "@id": entity_id,
-            "label": entity_label,
-            "atLocation": entity_path,
-            "wasGeneratedBy": "",
-        }
+    new_entity = {
+        "@id": entity_id,
+        "label": entity_label,
+        "atLocation": entity_path,
+        "wasGeneratedBy": "",
+    }
 
     return new_entity
 

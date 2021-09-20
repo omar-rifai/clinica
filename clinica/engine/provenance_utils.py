@@ -1,16 +1,36 @@
-def get_files_list(self):
+from clinica.utils.input_files import T1W_NII
+
+
+def get_files_list(self, pipeline_fullname):
     """
     Calls clinica_file_reader with the appropriate extentions
     """
     from clinica.utils.inputs import clinica_file_reader
-    from clinica.utils.input_files import T1W_NII
+    import clinica.utils.input_files as cif
 
-    pipeline = self.fullname
-    if pipeline == "t1-linear":
-        image_files = clinica_file_reader(
-            self.subjects, self.sessions, self.bids_directory, T1W_NII
+    # retrieve all the data dictionaries from the input_files module
+    input_dicts = {
+        k: v
+        for k, v in vars(cif).items()
+        if isinstance(v, dict)
+        and "input_to" in v.keys()
+        and pipeline_fullname in v["input_to"]
+    }
+
+    output_dicts = {
+        k: v
+        for k, v in vars(cif).items()
+        if isinstance(v, dict)
+        and "output_from" in v.keys()
+        and pipeline_fullname in v["output_from"]
+    }
+
+    for elem in input_dicts:
+        in_files = clinica_file_reader(
+            self.subjects, self.sessions, self.bids_directory, input_dicts[elem]
         )
-    return image_files
+
+    return in_files, []
 
 
 def is_entity_tracked(prov_context, entity_id):
