@@ -195,15 +195,9 @@ def register_prov(command, file_path):
         append_prov_dict(local_dict)
 
 
-def validate_command(command, file_path):
+def validate_command(prov_context, prov_command):
     """
     Check the command is valid on the data being run
     """
-    # TODO: handle the different use cases
+
     return True
-
-
-# TODO: retrieve list of subjects sessions from BIDS folder (function already exists)
-# TODO: (MAYBE) filter list based on already existing function to check already processed in CAPS
-# TODO: call clinica_file_reader(.., ..,  self._input_node.inputs) to retrieve list of input files
-# TODO add the files to the entities list
