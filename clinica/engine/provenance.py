@@ -14,10 +14,10 @@ def provenance(func):
         pipeline_fullname = self.fullname
         in_files_paths, out_files_paths = get_files_list(self, pipeline_fullname)
 
-        prov_input = get_prov(files_paths=in_files_paths)
-        prov_output = get_prov(files_paths=out_files_paths)
+        prov_context = get_context(files_paths=in_files_paths)
+        prov_command = get_command(self, prov_context, files_paths=out_files_paths)
 
-        validate_command(prov_input, prov_output)
+        validate_command(prov_context, prov_command)
 
         # Run the pipeline
         ret = func(self)
@@ -29,11 +29,11 @@ def provenance(func):
     return run_wrapper
 
 
-def get_prov(files_paths):
+def get_context(files_paths):
     """
     Return a dictionary with the provenance info related to the files in the files_paths
     """
-    prov_data = {"records": {"Entity": [], "Agent": [], "Activity": []}}
+    prov_data = {"Entity": [], "Agent": [], "Activity": []}
     for path in files_paths:
         prov_record = read_prov(path)
         if prov_record:
@@ -46,69 +46,56 @@ def read_prov(file_path):
     """
     Check if the given file is a valid provenance json-ld
     """
-    json_ld = Path(file_path)
-    if json_ld.suffix == ".json-ld" or json_ld.suffix == ".json":
-        with open(json_ld, "r") as fp:
+
+    # remove one or multiple extensions from the file
+    file_path = Path(file_path)
+    while file_path.suffix != "":
+        file_path = file_path.with_suffix("")
+
+    associated_jsonld = file_path.with_suffix(".jsonld")
+    if associated_jsonld.exists():
+        with open(associated_jsonld, "r") as fp:
             json_ld_data = json.load(fp)
             return json_ld_data
     return False
 
 
-def get_command(self, prov_context):
+def get_command(self, prov_context, files_paths):
     """
     Read the user command and save information in a dict
     """
     import sys
 
     new_agent = get_agent()
-    # TODO see if the entities already exist in the context, otherwise create them
-    new_entity = get_entity(self)
-    new_activity = get_activity(self, new_agent["@id"], new_entity["@id"])
+    if prov_context["Entity"]:
+        new_activity = get_activity(self, new_agent["@id"], prov_context["Entity"])
 
-    return {"Agent": new_agent, "Activity": new_activity, "Entity": new_entity}
-
-
-# def get_context(bids_dir):
-#     """
-#     Get the prov files in a given path and add to active dict
-#     """
-
-#     import os
-
-#     prov_context = {"records": {"Entity": [], "Agent": [], "Activity": []}}
-#     for root, _, files in os.walk(bids_dir, topdown=False):
-#         for file in files:
-#             file_path = os.path.join(root, file)
-#             prov_tmp = read_prov(file_path)
-#             if prov_tmp:
-#                 prov_context = append_prov_dict(prov_context, prov_tmp)
-
-#     return prov_context
+    return {"Agent": [new_agent], "Activity": [new_activity], "Entity": []}
 
 
-def validateJSON(jsonData):
-    try:
-        json.loads(jsonData[0])
-    except ValueError as err:
-        return False
-    return True
-
-
-def write_prov_file(local_data, file_path):
+def write_prov_file(prov_command, files_paths):
     """
     Write the dictionary data to the file_path
     """
-    # TODO: update the json-ld file associated with the file_path with the local_data
-    return file_path
+
+    for path in files_paths:
+        new_entity = get_entity(path)
+        record = {
+            "Agent": prov_command["Agent"],
+            "Activity": prov_command["Activity"],
+            "Entity": new_entity,
+        }
+    # TODO: write the prov file
+    return record
 
 
 def append_prov_dict(prov_data, local_data):
     """
     Append a specific prov data to the global prov dict
     """
-    prov_data["records"]["Entity"].append(local_data["records"]["Entity"])
-    prov_data["records"]["Agent"].append(local_data["records"]["Agent"])
-    prov_data["records"]["Activity"].append(local_data["records"]["Activity"])
+    prov_data["Entity"].extend(local_data["Entity"])
+    prov_data["Agent"].extend(local_data["Agent"])
+    prov_data["Activity"].extend(local_data["Activity"])
     return prov_data
 
 
@@ -125,7 +112,7 @@ def get_agent():
     return new_agent
 
 
-def get_activity(self, agent_id, entity_id):
+def get_activity(self, agent_id, entities):
     """
     Add the current command to the list of activities
     """
@@ -137,7 +124,7 @@ def get_activity(self, agent_id, entity_id):
     activity_id = get_activity_id(self.fullname)
     activity_command = (sys.argv[1:],)
     activity_agent = agent_id
-    activity_used_file = entity_id
+    activity_used_files = [e["@id"] for e in entities]
 
     new_activity = {
         "@id": activity_id,
@@ -145,13 +132,13 @@ def get_activity(self, agent_id, entity_id):
         "command": activity_command,
         "parameters": activity_parameters,
         "wasAssociatedWith": activity_agent,
-        "used": entity_id,
+        "used": activity_used_files,
     }
 
     return new_activity
 
 
-def get_entity(self, img_path):
+def get_entity(img_path):
     """
     Add the current file to the list of entities
     """
@@ -172,17 +159,6 @@ def get_entity(self, img_path):
 
     return new_entity
 
-
-def update_prov_file(self, command, file_path):
-    """
-    Update provenance file with result of new command
-    """
-    local_data = {}
-    update_activities(command, local_data)
-    update_agents(command, local_data)
-    update_entities(command, local_data)
-    write_prov_file(local_data, file_path)
-
     return local_data
 
 
@@ -194,21 +170,28 @@ def create_prov_file(command, path):
     return
 
 
-def register_prov(command, file_path):
-    """
-    Record the current activity to the provenance file and update active dict
-    """
-    if is_prov(file_path):
-        local_dict = update_prov_file(command, file_path)
-        append_prov_dict(local_dict)
-    else:
-        local_dict = create_prov_file(command, file_path)
-        append_prov_dict(local_dict)
-
-
 def validate_command(prov_context, prov_command):
     """
     Check the command is valid on the data being run
     """
+    flag = True
+    new_activity_id = prov_command["Activity"][0]["@id"]
+    new_agent_id = prov_command["Agent"][0]["@id"]
 
+    for entity in prov_context["Entity"]:
+        old_activity_id = entity["wasGeneratedBy"]
+        if old_activity_id:
+            ptr_activity = next(
+                item
+                for item in prov_context["Activity"]
+                if item["@id"] == old_activity_id
+            )
+            old_agent_id = ptr_activity["wasAssociatedWith"]
+            flag and is_valid(
+                (old_activity_id, old_agent_id), (new_activity_id, new_agent_id)
+            )
+    return True
+
+
+def is_valid(old, new):
     return True

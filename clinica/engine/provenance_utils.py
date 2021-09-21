@@ -29,17 +29,21 @@ def get_files_list(self, pipeline_fullname):
         in_files = clinica_file_reader(
             self.subjects, self.sessions, self.bids_directory, input_dicts[elem]
         )
+    for elem in output_dicts:
+        out_files = clinica_file_reader(
+            self.subjects,
+            self.sessions,
+            self.bids_directory,
+            output_dicts[elem],
+            raise_exception=False,
+        )
 
-    return in_files, []
+    return in_files, out_files
 
 
 def is_entity_tracked(prov_context, entity_id):
     flag_exists = next(
-        (
-            True
-            for item in prov_context["records"]["Entity"]
-            if item["@id"] == entity_id
-        ),
+        (True for item in prov_context["Entity"] if item["@id"] == entity_id),
         False,
     )
     return flag_exists
@@ -47,7 +51,7 @@ def is_entity_tracked(prov_context, entity_id):
 
 def is_agent_tracked(prov_context, agent_id):
     flag_exists = next(
-        (True for item in prov_context["records"]["Agent"] if item["@id"] == agent_id),
+        (True for item in prov_context["Agent"] if item["@id"] == agent_id),
         False,
     )
     return flag_exists
@@ -55,14 +59,15 @@ def is_agent_tracked(prov_context, agent_id):
 
 def is_activity_tracked(prov_context, activity_id):
     flag_exists = next(
-        (
-            True
-            for item in prov_context["records"]["Activity"]
-            if item["@id"] == activity_id
-        ),
+        (True for item in prov_context["Activity"] if item["@id"] == activity_id),
         False,
     )
     return flag_exists
+
+
+def is_empty(prov):
+
+    return prov["Entity"]
 
 
 def get_entity_id(file_path):
